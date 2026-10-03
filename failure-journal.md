@@ -24,3 +24,14 @@
   executing it. In the rebuild script, set permissions explicitly
   instead of assuming them. Alternative: run as `bash server-info.sh`,
   which doesn't need the execute bit.
+
+
+## 2026-10-03 - EC2 launched in wrong region
+- **Date:**
+- **Stage / block:** Stage 0, block 9 (EC2 launch)
+- **Symptom:** EC2 spinned up in wrong region
+- **Diagnosis:** noticed region selector on top right corner of AWS console
+- **Root cause:** console launches to whichever region is currently selcted.
+- **Fix:** deleted instance from North Virginia and spinned up another in Hyderabad
+- **Prevention:** check region selector before creating any resource. Run EC2 Global view in the weekly cost check to catch resources in the other regions. Longterm: Terraform pins the region in code.
+- **Cost Impact** None, terminated quickly; no leftover columes or IPs.
