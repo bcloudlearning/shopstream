@@ -1,27 +1,34 @@
 #!/usr/bin/env bash
 # setup-server.sh: builds the ShopStream web server from scratch.
-# Usage: sudo ./scripts/setup-server.sh <domain>
+# Usage: sudo ./scripts/setup-server.sh <domain> <email> [staging|production|none]
 set -euo pipefail
 
-DOMAIN="${1:?Usage: sudo $0 <domain>}"
+DOMAIN="${1:?Usage: sudo $0 <domain> <email> [staging|production|none]}"
+EMAIL="${2:?Usage: sudo $0 <domain> <email> [staging|production|none]}"
+CERT_MODE="${3:-staging}"
 WEB_ROOT="/var/www/shopstream"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [[ $EUID -ne 0 ]]; then
-  echo "Please run as root: sudo $0 $DOMAIN" >&2
+  echo "Please run as root: sudo $0 $*" >&2
   exit 1
 fi
 
-echo "==> [1/4] Installing packages"
+case "$CERT_MODE" in
+  staging|production|none) ;;
+  *) echo "CERT_MODE must be staging, production or none (got: $CERT_MODE)" >&2; exit 1 ;;
+esac
+
+echo "==> [1/5] Installing packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y nginx
+apt-get install -y nginx certbot python3-certbot-nginx
 
-echo "==> [2/4] Deploying site to $WEB_ROOT"
+echo "==> [2/5] Deploying site to $WEB_ROOT"
 mkdir -p "$WEB_ROOT"
 cp -r "$REPO_DIR/site/." "$WEB_ROOT/"
 
-echo "==> [3/4] Writing Nginx config for $DOMAIN"
+echo "==> [3/5] Writing Nginx config for $DOMAIN"
 cat > /etc/nginx/sites-available/shopstream <<EOF
 server {
     listen 80;
@@ -38,9 +45,21 @@ EOF
 ln -sf /etc/nginx/sites-available/shopstream /etc/nginx/sites-enabled/shopstream
 rm -f /etc/nginx/sites-enabled/default
 
-echo "==> [4/4] Testing config and starting Nginx"
+echo "==> [4/5] Testing config and starting Nginx"
 nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
 
-echo "==> Done. Check: curl -I http://localhost"
+echo "==> [5/5] HTTPS certificate (mode: $CERT_MODE)"
+if [[ "$CERT_MODE" == "none" ]]; then
+  echo "Skipping HTTPS."
+else
+  CERTBOT_ARGS=(--nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --redirect)
+  if [[ "$CERT_MODE" == "staging" ]]; then
+    CERTBOT_ARGS+=(--staging)
+  fi
+  certbot "${CERTBOT_ARGS[@]}"
+  certbot renew --dry-run
+fi
+
+echo "==> Done. Check: curl -I http://$DOMAIN"
