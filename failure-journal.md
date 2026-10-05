@@ -53,3 +53,21 @@
 - **Root cause:** Hyper-V reserves the full 1 GB up front before booting.
 - **Fix:** closing unused browser sessions and processes freedup memory
 - **Prevention:** Check Available memory in Task Manager before starting the VM. Stop the VM when you're not using it. Stage 3 runs Kubernetes locally and needs more memory, so plan for it.
+
+## Drill 1 - Ngninx down (stopped, crashed)
+- **Date:** 2026-10-05
+- **Stage / block:** stage 0, block 12
+- **Symptom:** curl: (7) Failed to connect to shopstream.in:443 after 2231 ms: Could not connect to server
+- **Diagnosis:** sudo ss -tlnp command showed nothing is listening on port 80,443,, nginx status check showed failed, Rsult showed after 29 secs it still is failed, and show nginx -P Restart shows restart=no
+- **Root cause:** nginx stop is deliberate whereas next is a crash - but systemd coudn't restart nginx service beacuse nginx unit file restart was not on. even though ngninx service was enabled so that it gest started after boot.
+- **Fix:** enabled restart on-failure, and not always because if we mention always then even whne we deliberately stop the service it would be started immediately.
+- **Prevention:** This restart on failure fix has to go into server setup script
+
+## Override seemed applied but it wasn't
+- **Date:** 2026-10-05
+- **Stage / block:** stage 0, block 12
+- **Symptom:** after nginx crashed, it remained in failed state instaed of restarting, verified with nginx status check
+- **Diagnosis:** verify the unit file of nginx to see whether changes had gone in
+- **Root cause:** didnot type the chnages in the lines specified, therefore changes were ignored
+- **Fix:** mentioned changes in designated space
+- **Prevention:** always verify config before testing it. systemctl cat nginx, systemtctl show nginx -p Restart, status nginx
