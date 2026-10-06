@@ -45,6 +45,15 @@ EOF
 ln -sf /etc/nginx/sites-available/shopstream /etc/nginx/sites-enabled/shopstream
 rm -f /etc/nginx/sites-enabled/default
 
+echo "==> Configuring Nginx to restart on crash"
+mkdir -p /etc/systemd/system/nginx.service.d
+cat > /etc/systemd/system/nginx.service.d/override.conf <<EOF
+[Service]
+Restart=on-failure
+RestartSec=5s
+EOF
+systemctl daemon-reload
+
 echo "==> [4/5] Testing config and starting Nginx"
 nginx -t
 systemctl enable --now nginx
