@@ -82,3 +82,13 @@
 - **Prevention:** the guard in the script refuses none when a certificate exists and the habit of never editing or testing on the server
 "Underlying habit: edited and ran scripts on EC2 instead of the VM. This also caused a Git divergence."
 
+## Drill 2: Port 443 blcoked at security group
+- **Date:** 2026-10-06
+- **Stage / block:** stage 0, block 12 (break-it drills)
+- **Symptom:** curl.exe -I https://shopstream.in > (28) failed to connect after 21103 ms. http://shopstream still returned 301 > https users get fast redirect, then browser hangs ~21secs and shows "site can't be reached"
+- **Diagnosis:** ss -tlnp shows nginx listening on port 80 and 443. curl -I --resolve shopstream.in:443:127.0.0.1 https://shopstream.in returned 200 OK. server healthy from inside but unreachable from outside
+- **Root cause:** HTTPS 443 inbound rule removed from security group. SG then drops the blcoked packets silently, so client gets no reply and times out (error 28), unlike drill 1's fast refusal (error 7).
+- **Fix:** re-added inbound rule HTTPS.443.0.0.0.0/0, SG changes applied immediatelt and received 200 OK
+- **Prevention:** monitor the path users actually take (HTTPS, oe curl -L to follow redirects). A check on http:// alone reports "up" during this outage. Long term: manaage SG rules in terraform stage 2. so manula console changes show up as drift
+- **Key lesson:** Error 7 (fast) = reached the server, nothing listening.
+  Error 28 (slow) = packet dropped on the way. Timing is evidence.
