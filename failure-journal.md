@@ -82,7 +82,7 @@
 - **Prevention:** the guard in the script refuses none when a certificate exists and the habit of never editing or testing on the server
 "Underlying habit: edited and ran scripts on EC2 instead of the VM. This also caused a Git divergence."
 
-## Drill 2: Port 443 blcoked at security group
+## Drill 3: Port 443 blocked at security group
 - **Date:** 2026-10-06
 - **Stage / block:** stage 0, block 12 (break-it drills)
 - **Symptom:** curl.exe -I https://shopstream.in > (28) failed to connect after 21103 ms. http://shopstream still returned 301 > https users get fast redirect, then browser hangs ~21secs and shows "site can't be reached"
@@ -92,3 +92,13 @@
 - **Prevention:** monitor the path users actually take (HTTPS, oe curl -L to follow redirects). A check on http:// alone reports "up" during this outage. Long term: manaage SG rules in terraform stage 2. so manula console changes show up as drift
 - **Key lesson:** Error 7 (fast) = reached the server, nothing listening.
   Error 28 (slow) = packet dropped on the way. Timing is evidence.
+
+## Drill 4: DNS pointing to wrong IP
+- **Date:** 2026-10-06
+- **Stage / block:** stage 0, blcok 12 (drill 4)
+- **Symptom:** curl command from server shows error 28, which means packets are dropping silently and connection timed out error occured after 20 secs, not a refusal. even server couldn't reach itself by name.
+- **Diagnosis:** resolvectl query shopstream.in > 192.0.2.10 (wrong IP) and curl -I --resolve shopstream.in:443:127.0.0.1 https://shopstream.in > 200 OK. server healthy when DNs is bypassed. right server - wrong address - DNS layer
+- **Root cause:** wrong ip given at DNS record
+- **Fix:** set A record back to Elastic IP. Authoritative name server returned the correct IP immediately; cache resolvers updated on their won ttl schedule.
+- **Prevention:** use elastic IP so rebuilds never require DNS changes, keep TTL low before planed DNS changes. when DNS looks wrong query authoritative servers first (nslookup -type=NS)
+- **Key Lessons:** Outage length = time to notice+ time to fix + up to one TTL. A DNS timeout is not the same as wrong answer, retry before concluding anything. Timeout duration differs by OS.
