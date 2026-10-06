@@ -71,3 +71,14 @@
 - **Root cause:** didnot type the chnages in the lines specified, therefore changes were ignored
 - **Fix:** mentioned changes in designated space
 - **Prevention:** always verify config before testing it. systemctl cat nginx, systemtctl show nginx -p Restart, status nginx
+
+## none mode run on live EC2 removed HTTPS
+- **Date:** 2026-10-05
+- **Stage / block:** stage 0, block 12
+- **Symptom:** Ngninx running, site not loading, curl error 7 to localjost:443
+- **Diagnosis:** ss -tlnp showed only :80; nginx -T showed no listen 443 or ssl_certificate lines
+- **Root cause:** ran setup-server.sh... none on EC2. Step3 cat > overwrote the config and none skipped certbot
+- **Fix:** re-ran in production mode. certbot reused the certificate("not yet due for renewal") and reinstalled it. verified :443, the padlock and the http -> 301
+- **Prevention:** the guard in the script refuses none when a certificate exists and the habit of never editing or testing on the server
+"Underlying habit: edited and ran scripts on EC2 instead of the VM. This also caused a Git divergence."
+

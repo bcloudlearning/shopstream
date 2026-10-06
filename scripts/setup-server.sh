@@ -28,6 +28,12 @@ echo "==> [2/5] Deploying site to $WEB_ROOT"
 mkdir -p "$WEB_ROOT"
 cp -r "$REPO_DIR/site/." "$WEB_ROOT/"
 
+if [[ "$CERT_MODE" == "none" && -d "/etc/letsencrypt/live/$DOMAIN" ]]; then
+  echo "Refusing: a certificate for $DOMAIN exists here. 'none' would remove HTTPS." >&2
+  echo "Use 'production' (or 'staging') on servers that already have HTTPS." >&2
+  exit 1
+fi
+
 echo "==> [3/5] Writing Nginx config for $DOMAIN"
 cat > /etc/nginx/sites-available/shopstream <<EOF
 server {
