@@ -102,3 +102,11 @@
 - **Fix:** set A record back to Elastic IP. Authoritative name server returned the correct IP immediately; cache resolvers updated on their won ttl schedule.
 - **Prevention:** use elastic IP so rebuilds never require DNS changes, keep TTL low before planed DNS changes. when DNS looks wrong query authoritative servers first (nslookup -type=NS)
 - **Key Lessons:** Outage length = time to notice+ time to fix + up to one TTL. A DNS timeout is not the same as wrong answer, retry before concluding anything. Timeout duration differs by OS.
+
+## CLI on laptop pointed to other AWS account
+- **Date:** 2026-10-12
+- **Stage / block** Stage 1, block 1
+- **Symptom:** CLI showed wrong accoutn while tried using AWS CLI 
+- **RootCause:** the default profile held another AWS account's static keys
+- **Fix:** backup, clear, add a named profile with no default
+- **Prevention:** always use --profile.
