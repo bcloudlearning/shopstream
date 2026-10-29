@@ -1,0 +1,14 @@
+[Unit]
+Description=ShopStream API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=shopstream
+WorkingDirectory=/opt/shopstream/api
+ExecStart=/opt/shopstream/venv/bin/gunicorn --bind 0.0.0.0:8080 --workers 2 app:app
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
