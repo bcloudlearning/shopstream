@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euxo pipefail
+dnf install -y python3 python3-pip git
+git clone https://github.com/bcloudlearning/shopstream.git /opt/shopstream
+python3 -m venv /opt/shopstream/venv
+/opt/shopstream/venv/bin/pip install -r /opt/shopstream/api/requirements.txt
+id shopstream >/dev/null 2>&1 || useradd --system --no-create-home --shell /sbin/nologin shopstream
+cp /opt/shopstream/deploy/shopstream-api.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now shopstream-api
