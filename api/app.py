@@ -1,9 +1,24 @@
 import json, os, socket
 import boto3
 import psycopg
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
+
+ALLOWED_ORIGINS = {
+    o.strip() for o in os.environ.get(
+        "ALLOWED_ORIGINS",
+        "https://shopstream.in,https://www.shopstream.in,http://172.26.77.24:5173",
+    ).split(",")
+}
+
+@app.after_request
+def add_cors_headers(response):
+    origin = request.headers.get("Origin")
+    if origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+    return response
 
 REGION = os.environ.get("AWS_REGION", "ap-south-2")
 SECRET_ID = os.environ.get("DB_SECRET_ID", "shopstream/db/app")
