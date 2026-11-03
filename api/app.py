@@ -8,7 +8,7 @@ app = Flask(__name__)
 ALLOWED_ORIGINS = {
     o.strip() for o in os.environ.get(
         "ALLOWED_ORIGINS",
-        "https://shopstream.in,https://www.shopstream.in,http://172.26.77.24:5173",
+        "https://shopstream.in,https://www.shopstream.in",
     ).split(",")
 }
 
