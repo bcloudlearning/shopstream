@@ -110,3 +110,164 @@
 - **RootCause:** the default profile held another AWS account's static keys
 - **Fix:** backup, clear, add a named profile with no default
 - **Prevention:** always use --profile.
+
+## Drill 2A, ALB → API security group rule removed
+- **Change** Removed shopstream-app-sg inbound rule Custom TCP port 8080 from shopstream-alb-sg
+- **Date:** 2026-11-4
+- **Stage / block:** stage 1, block 7
+- **Symptom:** 504s for about 2–3 minutes; both targets unhealthy (“Request timed out”); the ASG replaced an instance.
+- **Diagnosis:** The responses were HTTP codes, so the client reached the ALB. The internet, DNS, the ALB and its security group are all fine.
+504 means the ALB couldn’t get an answer from a target, so the problem is between the ALB and the servers.
+Both targets, in both AZs, failed at the same moment. A cause affecting one server wouldn’t do that, so it must be something they share: their security group, routing, or the app port.
+No requests appeared in the app logs, so traffic never reached the servers. This is a network block, not an application failure.
+The ASG’s replacement didn’t help, which confirms the problem isn’t in any particular server: new servers inherit the same configuration.
+Therefore: check the shared network control in front of the servers, shopstream-app-sg’s inbound rules. The rule allowing 8080 from the ALB is missing.
+- **Root cause:** the ALB couldn’t open connections to the targets. Because all targets were unhealthy, the ALB failed open and returned 504 instead of 503.
+- **Fix:** restored the rule
+- **Prevention:** 504 from an ALB with no app logs points to a network block between the ALB and the targets. And the ASG can’t fix configuration problems; it just recycles servers.
+
+
+##Drill 2A: ALB → API security group rule removed
+
+- **Date:** 4 Nov 2026
+- **Change:** deleted the inbound rule TCP 8080 from shopstream-alb-sg on shopstream-app-sg.
+
+- **Symptoms:**
+Repeated 504 Gateway Timeout from https://api.shopstream.in/health, each taking about 10 seconds.
+About 2–3 minutes of complete outage (14 consecutive errors).
+Both targets Unhealthy.
+ASG Activity: “an instance was taken out of service in response to an ELB system health check failure”. Server 16-159 was replaced by 16-164.
+
+- **Diagnosis:**
+
+HTTP codes came back, so the client reached the ALB. DNS and the ALB were fine.
+A 504 means the ALB couldn’t get an answer from a target, so the problem was between the ALB and the servers.
+Both targets, in both AZs, failed at the same moment, so the cause was something shared: security group, routing or port.
+Nothing reached the app logs, so traffic never arrived: a network block, not an application failure.
+The ASG’s replacement didn’t help, which confirmed the problem was configuration, not a particular server.
+Checked shopstream-app-sg inbound: the 8080 rule from the ALB was missing.
+
+- **Root cause:** the ALB’s connections to port 8080 were silently dropped. Health checks timed out, so every target went unhealthy. The ALB failed open and sent traffic to the unhealthy targets anyway, which also timed out, giving 504 rather than 503.
+
+- **Fix:** restored TCP 8080 from shopstream-alb-sg. The targets became healthy, and the loop recovered.
+
+- **Prevention:**
+Record each security group rule before changing it; change one rule at a time.
+Manage security groups in Terraform (Stage 2), so changes are reviewed and drift is detected.
+Alarm on ALB 5xx and unhealthy host count (Stage 4).
+
+- **Lessons:**
+An ALB 504 with silent app logs points to a network block between the ALB and its targets.
+When all targets are unhealthy, the ALB fails open, so expect 504, not 503.
+Auto Scaling can’t fix configuration problems; it recycles servers that inherit the same fault.
+Read the target health reason before fixing. I missed it this time.
+
+
+##Drill 2B: API → database security group rule removed
+
+- **Date:** 4 Nov 2026
+- **Change:** deleted the inbound rule PostgreSQL 5432 from shopstream-app-sg on shopstream-db-sg.
+- **Symptoms:**
+/products returned HTTP 500 after about 5 seconds. The website showed “Could not load products: HTTP 500”.
+/health returned OK at first.
+Then the targets went Unhealthy (reason: timeout), and the ASG replaced servers (new host 64-191).
+App logs: (add the exact database error line from journalctl -u shopstream-api)
+
+- **Diagnosis:**
+A 500 means the request reached the app and its code failed, so the problem was after the server, not in front of it.
+The app logs showed the database connection failing, which pointed at the API → database path.
+The targets going unhealthy contradicted the prediction, so I tested a hypothesis of worker exhaustion.
+Test: fired 3 /products requests at once, then timed /health, which took 5.02 seconds (normally instant). It had waited in line behind the blocked requests.
+The ALB’s health check timeout is 5 seconds, so the checks failed and healthy servers were marked dead.
+Checked shopstream-db-sg inbound: the 5432 rule from shopstream-app-sg was missing.
+
+- **Root cause:** the database was unreachable (missing rule), so each /products request held a Gunicorn worker for about 5 seconds (the connection timeout). With only 2 sync workers, /health couldn’t get a worker in time. The health checks timed out, and the ALB and ASG treated healthy servers as failed: a cascading failure.
+- **Fix:** restored PostgreSQL 5432 from shopstream-app-sg. Products loaded, and the targets became healthy.
+
+- **Prevention:**
+Fail fast: a shorter database connection timeout (about 1 second).
+More capacity: more workers, or a threaded worker type.
+A circuit breaker: stop calling the database for a while after repeated failures.
+Alarm on /products 5xx and database connection errors (Stage 4), not just target health.
+Don’t just raise the health check timeout; that hides the symptom.
+
+- **Lessons:**
+A 500 means the code failed (look after the server); a 404 means the path doesn’t exist; a 504 means nothing answered in time (look in front of the server).
+A shallow health check isn’t isolated if it shares workers with slow requests.
+Slow dependencies cause cascading failures. Measure with a timed test, rather than assuming.
+
+- **Symptoms -> App logs: **
+ERROR in app: Exception on /products [GET]
+app.py line 44: psycopg.connect(**DB_CONFIG)
+psycopg.errors.ConnectionTimeout: connection timeout expired
+
+##Drill 3 (full disk)
+- **Date:** 11/5/2026
+- **Stage/Drill:** Stage 1, Drill 3
+- **Change:** filled the root volume to 100% with fallocate (8 GB volume, 164 KB free).
+- **Symptoms:**
+Customers unaffected (/health ok, /products 200)
+Target healthy
+Writes and dnf failed with “No space left on device” (ENOSPC, Errno 28)
+No new log lines
+No disk metric in default EC2 monitoring
+A new SSM session failed to connect
+- **Root cause:** disk space exhausted. Nothing in the default setup measures disk space, so nothing noticed.
+Fix: deleted the fill file; disk back to 26%. (Alternative: terminate the instance and let the ASG replace it.)
+- **Prevention:**
+CloudWatch agent on every server for disk and memory metrics, with an alarm at about 80% disk usage (Stage 4)
+Ship logs off the server to CloudWatch Logs
+Limit log growth (log rotation, journald size limits)
+Keep servers stateless, so replacing one is always safe
+- **Lessons:**
+Health checks and default metrics don’t cover everything; a “healthy” server can be broken.
+Disk-full failures are silent until something writes, and can block your own access to fix them.
+
+
+##Drill 4: Database outage (reboot, single-AZ)
+
+- **Date:** 5 Nov 2026, 00:57 IST
+- **Change:** rebooted shopstream-db (RDS → Actions → Reboot). A single-AZ database, so no standby to fail over to. Multi-AZ isn’t available on the current Free plan; the failover drill is planned for Stage 8.
+
+- **Prediction**
+
+First attempt: no errors seen, so I hypothesised that products were served from memory.
+Missed: the first loop wasn’t running during that reboot (00:49 IST), so it never covered the outage window.
+
+- **Symptoms:**
+
+The timestamped loop (saved to db-reboot-drill.txt) showed 4 × HTTP 500 between 00:57:15 and 00:57:21, each taking only 14–16 ms.
+Fully recovered at 00:57:23 (the first request took 97 ms, against a normal 30–40 ms), with no restart.
+RDS events: DB instance shutdown at 00:57:08.9 IST; DB instance restarted at 00:57:28.2 IST.
+- **App logs:**
+  app.py line 44: psycopg.connect(**DB_CONFIG)
+  psycopg.OperationalError: connection failed: connection to server at
+  "10.30.32.103", port 5432 failed: server closed the connection unexpectedly
+
+- **Diagnosis:**
+
+A 500 means requests reached the app, and its code failed, so the problem was after the server.
+The app logs show the database connection failing at 10.30.32.103:5432 (in shopstream-db-a), at the same time as RDS’s shutdown event.
+“Server closed the connection unexpectedly” means the database’s address was reachable, but PostgreSQL was shutting down, so it actively closed the connection.
+Each failure took about 15 ms, not 5 seconds like the ConnectionTimeout in Drill 2B. The workers weren’t blocked, so /health kept working.
+The “served from memory” hypothesis was rejected: the code queries the database on every request, and the re-run, with saved evidence, showed the errors clearly.
+
+- **Root cause:** a planned database reboot, with no standby instance. PostgreSQL was unavailable for a few seconds, and every /products request during that window failed.
+
+- **Fix:** none needed. The database came back, and the API recovered by itself, because it opens a new connection on every request.
+
+- **Customer impact:** about 8 seconds of failed product loads (4 requests). The website itself stayed up.
+
+- **Prevention:**
+
+Multi-AZ for production databases: a standby in another AZ for instance and AZ failures (Stage 8).
+Retry once on database connection errors in the API, to smooth over short blips like this.
+Schedule planned reboots and maintenance in the maintenance window, at a low-traffic time.
+Alarm on API 5xx rates and database connection errors (Stage 4).
+
+- **Lessons:**
+
+Measure from the customer’s side, and save evidence to a file. Screen output gets lost, and RDS’s events don’t match exactly what customers experience.
+Fast failures are far less harmful than slow ones. Compare the 15 ms failures here with the 5-second hangs and worker exhaustion in Drill 2B.
+Connecting per request lets the app heal itself after the database returns.
+Test hypotheses against the evidence. My first conclusion was wrong, and the timestamps proved it.
