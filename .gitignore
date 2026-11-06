@@ -1,0 +1,29 @@
+# Secrets & credentials — never commit these
+.env
+.env.*
+*.pem
+*.key
+credentials
+aws.json
+*.tfvars
+terraform.tfstate
+terraform.tfstate.*
+.terraform/
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Build / output
+dist/
+build/
+*.log
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
